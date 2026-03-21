@@ -75,7 +75,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Starting pings for target: %s", target)
 
-	lower := 100 * time.Millisecond
+	lower := 200 * time.Millisecond
 	higher := 2 * time.Second
 
 	ctx := r.Context()
@@ -106,36 +106,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			t1 := time.Now().UTC()
 			t1Str := t1.Format("2006-01-02T15:04:05.000Z")
 
-			isTimeout := false
+			isTimeout, err := emitResultEvent(conn, target, err, pingCtx, t0Str, t1Str, t1.Sub(t0))
 			if err != nil {
-				// ERROR case
-				errStr := err.Error()
-				if pingCtx.Err() == context.DeadlineExceeded {
-					errStr = "timeout"
-					isTimeout = true
-				}
-				errorEvent := PingEvent{
-					Timestamp: t1Str,
-					Target:    target,
-					Event:     "ERROR",
-					StartTime: t0Str,
-					Error:     errStr,
-				}
-				if err := sendEvent(conn, errorEvent); err != nil {
-					return
-				}
-			} else {
-				// COMPLETE case
-				completeEvent := PingEvent{
-					Timestamp: t1Str,
-					Target:    target,
-					Event:     "COMPLETE",
-					StartTime: t0Str,
-					DeltaMs:   t1.Sub(t0).Milliseconds(),
-				}
-				if err := sendEvent(conn, completeEvent); err != nil {
-					return
-				}
+				return
 			}
 
 			// Scheduling logic
@@ -157,6 +130,36 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			// Normal case: reschedule immediately
 		}
 	}
+}
+
+func emitResultEvent(conn *websocket.Conn, target string, pingErr error, pingCtx context.Context, t0Str, t1Str string, elapsed time.Duration) (bool, error) {
+	isTimeout := false
+	if pingErr != nil {
+		// ERROR case
+		errStr := pingErr.Error()
+		if pingCtx.Err() == context.DeadlineExceeded {
+			errStr = "timeout"
+			isTimeout = true
+		}
+		errorEvent := PingEvent{
+			Timestamp: t1Str,
+			Target:    target,
+			Event:     "ERROR",
+			StartTime: t0Str,
+			Error:     errStr,
+		}
+		return isTimeout, sendEvent(conn, errorEvent)
+	}
+
+	// COMPLETE case
+	completeEvent := PingEvent{
+		Timestamp: t1Str,
+		Target:    target,
+		Event:     "COMPLETE",
+		StartTime: t0Str,
+		DeltaMs:   elapsed.Milliseconds(),
+	}
+	return isTimeout, sendEvent(conn, completeEvent)
 }
 
 func sendEvent(conn *websocket.Conn, event PingEvent) error {

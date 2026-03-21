@@ -4,7 +4,7 @@ The ping monitoring tool implements the following scheduling logic for its pings
 
 ## Configuration
 
-- `lower` bound: 100ms (default)
+- `lower` bound: 200ms (default)
 - `higher` bound: 2s (default)
 
 ## Cases
