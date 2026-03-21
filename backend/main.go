@@ -25,7 +25,7 @@ type PingEvent struct {
 	Target    string `json:"target"`
 	Event     string `json:"event"`
 	StartTime string `json:"startTime,omitempty"`
-	DeltaMs   int64  `json:"deltaMs,omitempty"`
+	DeltaMs   int64  `json:"deltaMs"`
 	Error     string `json:"error,omitempty"`
 }
 
@@ -85,8 +85,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Context cancelled for target: %s", target)
 			return
 		default:
-			t0 := time.Now()
-			t0Str := t0.Format(time.RFC3339)
+			t0 := time.Now().UTC()
+			t0Str := t0.Format("2006-01-02T15:04:05.000Z")
 
 			// Emit START
 			startEvent := PingEvent{
@@ -103,14 +103,16 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			_, err := ping(pingCtx, target)
 			cancel()
 
-			t1 := time.Now()
-			t1Str := t1.Format(time.RFC3339)
+			t1 := time.Now().UTC()
+			t1Str := t1.Format("2006-01-02T15:04:05.000Z")
 
+			isTimeout := false
 			if err != nil {
 				// ERROR case
 				errStr := err.Error()
 				if pingCtx.Err() == context.DeadlineExceeded {
 					errStr = "timeout"
+					isTimeout = true
 				}
 				errorEvent := PingEvent{
 					Timestamp: t1Str,
@@ -122,7 +124,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				if err := sendEvent(conn, errorEvent); err != nil {
 					return
 				}
-				// Reschedule immediately
 			} else {
 				// COMPLETE case
 				completeEvent := PingEvent{
@@ -135,20 +136,25 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				if err := sendEvent(conn, completeEvent); err != nil {
 					return
 				}
-
-				// Scheduling logic
-				elapsed := t1.Sub(t0)
-				if elapsed < lower {
-					// Short cycle case
-					select {
-					case <-ctx.Done():
-						return
-					case <-time.After(lower - elapsed):
-						// continue
-					}
-				}
-				// Normal case: reschedule immediately
 			}
+
+			// Scheduling logic
+			if isTimeout {
+				// Timeout case: reschedule immediately
+				continue
+			}
+
+			elapsed := t1.Sub(t0)
+			if elapsed < lower {
+				// Short cycle case
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(lower - elapsed):
+					// continue
+				}
+			}
+			// Normal case: reschedule immediately
 		}
 	}
 }
@@ -166,6 +172,7 @@ func sendEvent(conn *websocket.Conn, event PingEvent) error {
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 	http.HandleFunc("/ws", handleWebSocket)
 
 	port := os.Getenv("PORT")
