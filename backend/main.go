@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -26,12 +27,12 @@ type PingResult struct {
 	Error     string  `json:"error,omitempty"`
 }
 
-func ping(target string) (string, error) {
+func ping(ctx context.Context, target string) (string, error) {
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.Command("ping", "-n", "1", target)
+		cmd = exec.CommandContext(ctx, "ping", "-n", "1", target)
 	} else {
-		cmd = exec.Command("ping", "-c", "1", target)
+		cmd = exec.CommandContext(ctx, "ping", "-c", "1", target)
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -75,10 +76,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
+	ctx := r.Context()
 	for {
 		select {
+		case <-ctx.Done():
+			log.Printf("Context cancelled for target: %s", target)
+			return
 		case <-ticker.C:
-			latency, err := ping(target)
+			latency, err := ping(ctx, target)
 			result := PingResult{
 				Target:    target,
 				Latency:   latency,
