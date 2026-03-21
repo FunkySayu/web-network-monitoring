@@ -71,8 +71,15 @@ function App() {
       <main>
         <div data-testid="pings-list">
           {pings.map((ping, index) => (
-            <div key={index} className="ping-line">
-              {ping.timestamp}: {ping.target} - {ping.latency} ms {ping.error ? `(Error: ${ping.error})` : ''}
+            <div key={index} className={`ping-line event-${ping.event.toLowerCase()}`}>
+              <span className="timestamp">[{ping.timestamp}]</span>
+              <span className="target"> {ping.target}</span>
+              <span className="event-type"> - {ping.event}</span>
+              {ping.event === 'COMPLETE' && <span className="delta"> ({ping.deltaMs} ms)</span>}
+              {ping.event === 'ERROR' && <span className="error"> (Error: {ping.error})</span>}
+              {(ping.event === 'COMPLETE' || ping.event === 'ERROR') && ping.startTime &&
+                <span className="start-time"> [Started at: {ping.startTime}]</span>
+              }
             </div>
           ))}
         </div>

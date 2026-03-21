@@ -20,11 +20,13 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-type PingResult struct {
-	Target    string  `json:"target"`
-	Latency   string  `json:"latency"`
-	Timestamp string  `json:"timestamp"`
-	Error     string  `json:"error,omitempty"`
+type PingEvent struct {
+	Timestamp string `json:"timestamp"`
+	Target    string `json:"target"`
+	Event     string `json:"event"`
+	StartTime string `json:"startTime,omitempty"`
+	DeltaMs   int64  `json:"deltaMs,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 func ping(ctx context.Context, target string) (string, error) {
@@ -73,8 +75,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Starting pings for target: %s", target)
 
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
+	lower := 100 * time.Millisecond
+	higher := 2 * time.Second
 
 	ctx := r.Context()
 	for {
@@ -82,24 +84,85 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			log.Printf("Context cancelled for target: %s", target)
 			return
-		case <-ticker.C:
-			latency, err := ping(ctx, target)
-			result := PingResult{
+		default:
+			t0 := time.Now()
+			t0Str := t0.Format(time.RFC3339)
+
+			// Emit START
+			startEvent := PingEvent{
+				Timestamp: t0Str,
 				Target:    target,
-				Latency:   latency,
-				Timestamp: time.Now().Format(time.RFC3339),
+				Event:     "START",
 			}
-			if err != nil {
-				result.Error = err.Error()
+			if err := sendEvent(conn, startEvent); err != nil {
+				return
 			}
 
-			message, _ := json.Marshal(result)
-			if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
-				log.Printf("Write error: %v", err)
-				return
+			// Ping with timeout
+			pingCtx, cancel := context.WithTimeout(ctx, higher)
+			_, err := ping(pingCtx, target)
+			cancel()
+
+			t1 := time.Now()
+			t1Str := t1.Format(time.RFC3339)
+
+			if err != nil {
+				// ERROR case
+				errStr := err.Error()
+				if pingCtx.Err() == context.DeadlineExceeded {
+					errStr = "timeout"
+				}
+				errorEvent := PingEvent{
+					Timestamp: t1Str,
+					Target:    target,
+					Event:     "ERROR",
+					StartTime: t0Str,
+					Error:     errStr,
+				}
+				if err := sendEvent(conn, errorEvent); err != nil {
+					return
+				}
+				// Reschedule immediately
+			} else {
+				// COMPLETE case
+				completeEvent := PingEvent{
+					Timestamp: t1Str,
+					Target:    target,
+					Event:     "COMPLETE",
+					StartTime: t0Str,
+					DeltaMs:   t1.Sub(t0).Milliseconds(),
+				}
+				if err := sendEvent(conn, completeEvent); err != nil {
+					return
+				}
+
+				// Scheduling logic
+				elapsed := t1.Sub(t0)
+				if elapsed < lower {
+					// Short cycle case
+					select {
+					case <-ctx.Done():
+						return
+					case <-time.After(lower - elapsed):
+						// continue
+					}
+				}
+				// Normal case: reschedule immediately
 			}
 		}
 	}
+}
+
+func sendEvent(conn *websocket.Conn, event PingEvent) error {
+	message, err := json.Marshal(event)
+	if err != nil {
+		return err
+	}
+	if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
+		log.Printf("Write error: %v", err)
+		return err
+	}
+	return nil
 }
 
 func main() {

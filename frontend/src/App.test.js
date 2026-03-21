@@ -74,18 +74,26 @@ describe('App Component', () => {
     fireEvent.click(button);
 
     // Simulate incoming message
-    const mockPingResult = {
-      timestamp: '2023-10-27T10:00:00Z',
+    const mockPingEvent = {
+      timestamp: '2023-10-27T10:00:05Z',
       target: 'test.com',
-      latency: '15.5',
+      event: 'COMPLETE',
+      startTime: '2023-10-27T10:00:00Z',
+      deltaMs: 5000,
     };
 
     act(() => {
-      messageCallback(mockPingResult);
+      messageCallback(mockPingEvent);
     });
 
-    const pingLine = await screen.findByText(/15.5 ms/);
+    const pingLine = await screen.findByText(/COMPLETE/);
     expect(pingLine).toBeInTheDocument();
-    expect(pingLine).toHaveTextContent('test.com');
+    // The text content might be split across multiple spans, but toHaveTextContent should handle it.
+    // Wait, "Received: - COMPLETE" means it's only finding the span with the event type?
+    // Let's check the container.
+    const pingsList = screen.getByTestId('pings-list');
+    expect(pingsList).toHaveTextContent('COMPLETE');
+    expect(pingsList).toHaveTextContent('5000 ms');
+    expect(pingsList).toHaveTextContent('test.com');
   });
 });
