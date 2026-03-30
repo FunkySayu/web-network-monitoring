@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import './App.css';
+import PingCanvas from './PingCanvas';
 
 function App() {
   const [searchParams, setSearchParams] = useSearchParams();
   const target = searchParams.get('target') || '';
   const [inputValue, setInputValue] = useState(target);
-  const [pings, setPings] = useState([]);
+  const [lastEvent, setLastEvent] = useState(null);
   const [ws, setWs] = useState(null);
 
   const handleInputChange = (e) => {
@@ -31,7 +32,7 @@ function App() {
 
     newWs.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      setPings((prev) => [data, ...prev]);
+      setLastEvent(data);
     };
 
     newWs.onclose = () => {
@@ -49,14 +50,14 @@ function App() {
         ws.close();
         setWs(null);
       }
-      setPings([]);
+      setLastEvent(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [target]);
 
   return (
     <div className="App">
-      <header className="App-header">
+      <header className="App-header-small">
         <form onSubmit={handleSearch}>
           <input
             type="text"
@@ -69,20 +70,7 @@ function App() {
         </form>
       </header>
       <main>
-        <div data-testid="pings-list">
-          {pings.map((ping, index) => (
-            <div key={index} className={`ping-line event-${ping.event.toLowerCase()}`}>
-              <span className="timestamp">[{ping.timestamp}]</span>
-              <span className="target"> {ping.target}</span>
-              <span className="event-type"> - {ping.event}</span>
-              {ping.event === 'COMPLETE' && <span className="delta"> ({ping.deltaMs} ms)</span>}
-              {ping.event === 'ERROR' && <span className="error"> (Error: {ping.error})</span>}
-              {(ping.event === 'COMPLETE' || ping.event === 'ERROR') && ping.startTime &&
-                <span className="start-time"> [Started at: {ping.startTime}]</span>
-              }
-            </div>
-          ))}
-        </div>
+        {target && <PingCanvas lastEvent={lastEvent} />}
       </main>
     </div>
   );

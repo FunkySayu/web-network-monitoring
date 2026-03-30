@@ -15,6 +15,29 @@ class MockWebSocket {
 }
 global.WebSocket = MockWebSocket;
 
+// Mock Worker
+class MockWorker {
+  constructor(stringUrl) {
+    this.url = stringUrl;
+    this.onmessage = null;
+    this.terminate = jest.fn();
+    this.postMessage = jest.fn();
+  }
+}
+global.Worker = MockWorker;
+
+// Mock ResizeObserver
+global.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+
+// Mock HTMLCanvasElement.prototype.transferControlToOffscreen
+HTMLCanvasElement.prototype.transferControlToOffscreen = jest.fn().mockImplementation(() => {
+  return {}; // Return a dummy offscreen canvas
+});
+
 const renderWithRouter = (ui) => {
   return render(ui, { wrapper: BrowserRouter });
 };
@@ -53,8 +76,10 @@ describe('App Component', () => {
     global.WebSocket = originalWebSocket;
   });
 
-  test('displays a text line when data is emitted on the websocket', async () => {
+  test('forwards data to the canvas worker when data is emitted on the websocket', async () => {
     let messageCallback;
+    const mockPostMessage = jest.fn();
+
     class MockWebSocketWithMessage extends MockWebSocket {
       constructor(url) {
         super(url);
@@ -63,6 +88,15 @@ describe('App Component', () => {
         };
       }
     }
+
+    const originalWorker = global.Worker;
+    global.Worker = jest.fn().mockImplementation(() => {
+        return {
+            postMessage: mockPostMessage,
+            terminate: jest.fn()
+        };
+    });
+
     global.WebSocket = MockWebSocketWithMessage;
 
     renderWithRouter(<App />);
@@ -86,14 +120,12 @@ describe('App Component', () => {
       messageCallback(mockPingEvent);
     });
 
-    const pingLine = await screen.findByText(/COMPLETE/);
-    expect(pingLine).toBeInTheDocument();
-    // The text content might be split across multiple spans, but toHaveTextContent should handle it.
-    // Wait, "Received: - COMPLETE" means it's only finding the span with the event type?
-    // Let's check the container.
-    const pingsList = screen.getByTestId('pings-list');
-    expect(pingsList).toHaveTextContent('COMPLETE');
-    expect(pingsList).toHaveTextContent('5000 ms');
-    expect(pingsList).toHaveTextContent('test.com');
+    // Check if postMessage was called with the event
+    expect(mockPostMessage).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'event',
+        data: mockPingEvent
+    }));
+
+    global.Worker = originalWorker;
   });
 });
