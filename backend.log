@@ -1,0 +1,8 @@
+2026/03/30 11:58:46.598578 Server starting on port 8080
+2026/03/30 11:58:59.231633 Starting pings for target: 8.8.8.8
+2026/03/30 11:59:07.655101 Write error: write tcp [::1]:8080->[::1]:41860: write: broken pipe
+2026/03/30 11:59:35.414155 Starting pings for target: 8.8.8.8
+2026/03/30 11:59:43.838609 Write error: write tcp [::1]:8080->[::1]:44522: write: broken pipe
+2026/03/30 12:00:01.600919 Starting pings for target: 8.8.8.8
+2026/03/30 12:00:10.837935 Write error: write tcp [::1]:8080->[::1]:35214: write: broken pipe
+signal: terminated
